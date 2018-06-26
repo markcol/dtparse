@@ -360,6 +360,10 @@ fn decimal_split(characters: &str, cast_period: bool) -> Vec<String> {
 
 /// Tokenize a date string into a Vec of strings.
 ///
+/// The tokenizer will return multiple whitespace characters as part
+/// of the resulting vector. Every whitespace character will be
+/// returned as a separate element in the vector.
+///
 /// # Example
 ///
 /// ```rust
@@ -367,10 +371,27 @@ fn decimal_split(characters: &str, cast_period: bool) -> Vec<String> {
 /// extern crate dtparse;
 /// use chrono::{Timelike, Datelike};
 ///
-/// let v = dtparse::tokenize("Sat Oct 11 17:13:46 UTC 2003");
-/// println!("Tokens: {:#?}", v);
+/// let v = dtparse::tokenize("Sat Oct 11 17:13:46 UTC  2003");
+/// assert_eq!(v.len(), 16);
 /// assert_eq!(v[0], "Sat");
+/// assert_eq!(v[1], " ");
+/// assert_eq!(v[2], "Oct");
+/// assert_eq!(v[3], " ");
+/// assert_eq!(v[4], "11");
+/// assert_eq!(v[5], " ");
+/// assert_eq!(v[6], "17");
+/// assert_eq!(v[7], ":");
+/// assert_eq!(v[8], "13");
+/// assert_eq!(v[9], ":");
+/// assert_eq!(v[10], "46");
+/// assert_eq!(v[11], " ");
+/// assert_eq!(v[12], "UTC");
+/// assert_eq!(v[13], " ");
+/// assert_eq!(v[14], " ");
+/// assert_eq!(v[15], "2003");
 /// ```
+// TODO(markcol): Should multiple whitespace characters be coallesced
+// into a single element in the output vector?
 pub fn tokenize(parse_string: &str) -> Vec<String> {
     let tokenizer = Tokenizer::new(parse_string.to_owned());
     tokenizer.collect()
@@ -1441,7 +1462,7 @@ fn ljust(s: &str, chars: usize, replace: char) -> String {
     }
 }
 
-/// Parse a string into a [`NaiveDateType`] and [`FixedOffset`] tuple.
+/// Parse a string into a tuple of ([`NaiveDateTime`], [`FixedOffset`]).
 ///
 /// # Example
 ///
@@ -1450,8 +1471,8 @@ fn ljust(s: &str, chars: usize, replace: char) -> String {
 /// extern crate dtparse;
 /// use chrono::{Timelike, Datelike};
 ///
-/// let (time, offset) = dtparse::parse("Sat Oct 11 17:13:46 UTC 2003")
-///                         .expect(&format!("Unable to parse date"));
+/// let (time, _) = dtparse::parse("Sat Oct 11 17:13:46 UTC 2003")
+///                     .expect(&format!("Unable to parse date"));
 /// assert_eq!(time.year(), 2003);
 /// assert_eq!(time.month(), 10);
 /// assert_eq!(time.day(), 11);
@@ -1459,7 +1480,6 @@ fn ljust(s: &str, chars: usize, replace: char) -> String {
 /// assert_eq!(time.minute(), 13);
 /// assert_eq!(time.second(), 46);
 /// assert_eq!(time.timestamp_subsec_micros(), 0);
-/// assert_eq!(offset.map(|u| u.local_minus_utc()), Some(0));
 /// ```
 pub fn parse(timestr: &str) -> ParseResult<(NaiveDateTime, Option<FixedOffset>)> {
     let res = Parser::default().parse(
