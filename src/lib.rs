@@ -1,3 +1,49 @@
+//! The dtparse module is a Python dateutil-compatible parser for
+//! Rust.
+//!
+//! The parser is able to parse most known formats to represent a date
+//! and/or time. It attempts to be forgiving with regars to unlikely
+//! input formats, returning a datetime object even for dates which
+//! are ambiguous.
+//!
+//! If an element of a date/time stamp is omitted, the following rules
+//! are applied:
+//!
+//! * If AM or PM is left unspecified, a 24-hour clock is assumed,
+//! however, an hour on a 12-hour clock (0 <= hour <= 12) must be
+//! specified if AM or PM is specified.
+//!
+//! * If a time zone is omitted, a timezone-naive result is
+//! returned.
+//!
+//! * If any other elements are missing, they are taken from the
+//! default object. If this results in a day number exceeding the
+//! valid number of days per month, the value falls back to the end of
+//! the month.
+//!
+//! Additional resources about date/time string formats can be found below:
+//!
+//! * [A summary of the international standard date and time notation](http://www.cl.cam.ac.uk/~mgk25/iso-time.html)
+//! * [W3C Date and Time Formats](http://www.w3.org/TR/NOTE-datetime)
+//! * [Time Formats (Planetary Rings Node)](https://pds-rings.seti.org/tools/time_formats.html)
+//! * [CPAN ParseDate module](http://search.cpan.org/~muir/Time-modules-2013.0912/lib/Time/ParseDate.pm)
+//! * [Java SimpleDateFormat Class](https://docs.oracle.com/javase/6/docs/api/java/text/SimpleDateFormat.html)
+//!
+//! # Setup
+//!
+//! Add this to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! dtutil = "1"
+//! ```
+//! and this to your crate root:
+//!
+//! ```rust
+//! extern crate dtparse;
+//! ```
+
+#![deny(missing_docs)]
 #![allow(dead_code)]
 #![allow(unused)]
 
@@ -42,16 +88,23 @@ lazy_static! {
     static ref SIXTY: Decimal = Decimal::new(60, 0);
 }
 
+/// Error raised when parsing a time/date string.
 #[derive(Debug, PartialEq)]
 pub enum ParseInternalError {
     // Errors that indicate internal bugs
+    /// YMDEarlyResolve
     YMDEarlyResolve,
+    /// YMDValueUnset
     YMDValueUnset(Vec<YMDLabel>),
+    /// ParseIndexError
     ParseIndexError,
+    /// An invalid decimal format was encountered.
     InvalidDecimal,
+    /// An invalid integer format was encountered.
     InvalidInteger,
 
     // Python-style errors
+    /// Indicates an invalid or unknown string format.
     ValueError(String),
 }
 
@@ -67,16 +120,26 @@ impl From<ParseIntError> for ParseInternalError {
     }
 }
 
+/// Error types returned by the parser.
 #[derive(Debug, PartialEq)]
 pub enum ParseError {
+    /// An unknown weekday specifier was found.
     AmbiguousWeekday,
+    /// An internal parser error was encountered.
     InternalError(ParseInternalError),
+    /// An invalid day value was found.
     InvalidDay,
+    /// An invalid month value was found.
     InvalidMonth,
+    /// UnrecognizedToken(String),
     UnrecognizedToken(String),
+    /// InvalidParseResult(ParsingResult),
     InvalidParseResult(ParsingResult),
+    /// An AM/PM specifier was encountered without a corresponding hour.
     AmPmWithoutHour,
+    /// An invalid hour encountered.
     InvalidHour,
+    /// An unknown timezone specifier was encountered.
     TimezoneUnsupported,
 }
 
@@ -89,6 +152,7 @@ impl From<ParseInternalError> for ParseError {
 type ParseResult<I> = Result<I, ParseError>;
 type ParseIResult<I> = Result<I, ParseInternalError>;
 
+/// Tokenizer
 pub struct Tokenizer {
     token_stack: Vec<String>,
     parse_string: String,
@@ -104,6 +168,7 @@ enum ParseState {
 }
 
 impl Tokenizer {
+    /// Create a new Tokenizer from a string date representation.
     fn new(parse_string: String) -> Self {
         Tokenizer {
             token_stack: Vec::new(),
@@ -293,6 +358,19 @@ fn decimal_split(characters: &str, cast_period: bool) -> Vec<String> {
     token_stack
 }
 
+/// Tokenize a date string into a Vec of strings.
+///
+/// # Example
+///
+/// ```rust
+/// extern crate chrono;
+/// extern crate dtparse;
+/// use chrono::{Timelike, Datelike};
+///
+/// let v = dtparse::tokenize("Sat Oct 11 17:13:46 UTC 2003");
+/// println!("Tokens: {:#?}", v);
+/// assert_eq!(v[0], "Sat");
+/// ```
 pub fn tokenize(parse_string: &str) -> Vec<String> {
     let tokenizer = Tokenizer::new(parse_string.to_owned());
     tokenizer.collect()
@@ -316,6 +394,7 @@ fn parse_info(vec: Vec<Vec<&str>>) -> HashMap<String, usize> {
     m
 }
 
+/// The `ParserInfo` structure controls the behavior of the parser.
 #[derive(Debug, PartialEq)]
 pub struct ParserInfo {
     jump: HashMap<String, usize>,
@@ -326,7 +405,13 @@ pub struct ParserInfo {
     utczone: HashMap<String, usize>,
     pertain: HashMap<String, usize>,
     tzoffset: HashMap<String, usize>,
+    /// Whether to interpret the first value in an ambiguous 3-integer
+    /// date as the day (true), or month (false). If `yearfirst` is
+    /// set to `True`, this distringuises between YDM and YMD, respectively.
     dayfirst: bool,
+    /// Whether to interpret the first value in an ambiguous 3-integer
+    /// date as the year. If `true`, the first number is taken as the
+    /// year, otherwise the last number is taken to be the year.
     yearfirst: bool,
     year: i32,
     century: i32,
@@ -479,10 +564,14 @@ fn days_in_month(year: i32, month: i32) -> Result<u32, ParseError> {
     }
 }
 
+/// Associates a date component with a value.
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub enum YMDLabel {
+    /// The associated value represents a year.
     Year,
+    /// The associated value represents a month.
     Month,
+    /// The associated value represents a day.
     Day,
 }
 
@@ -725,6 +814,7 @@ impl YMD {
     }
 }
 
+/// ParsingResult
 #[derive(Default, Debug, PartialEq)]
 pub struct ParsingResult {
     year: Option<i32>,
@@ -742,16 +832,60 @@ pub struct ParsingResult {
     any_unused_tokens: Vec<String>,
 }
 
+/// Parser
 #[derive(Default)]
 pub struct Parser {
     info: ParserInfo,
 }
 
 impl Parser {
+    /// Create a new Parser from a ParseInfo.
     pub fn new(info: ParserInfo) -> Self {
         Parser { info }
     }
 
+    /// Parse a time/date string into a `NaiveDateTime` object.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestr` - Any date/time string using the supported
+    ///   formats.
+    ///
+    /// * `default` - The default datetime object, if this is a datetime object and not
+    ///   `None`, elements specified in ``timestr`` replace elements in the
+    ///   default object.
+    ///
+    /// * `ignoretz` - If `True`, time zones in parsed strings are ignored and a
+    ///   naive :class:`datetime.datetime` object is returned.
+    ///
+    /// * `tzinfos` - Additional time zone names / aliases which may be present in the
+    ///     string. This argument maps time zone names (and optionally offsets
+    ///     from those time zones) to time zones. This parameter can be a
+    ///     dictionary with timezone aliases mapping time zone names to time
+    ///     zones or a function taking two parameters (`tzname` and
+    ///     `tzoffset`) and returning a time zone.
+    ///
+    ///     The timezones to which the names are mapped can be an integer
+    ///     offset from UTC in seconds or a :class:`tzinfo` object.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing a ([`NaiveDateTime`], [`FixedOffset`],
+    /// Vec<String>). The first element of the tuple is the parsed
+    /// date/time value. the second is the offset. The third is a
+    /// vector containing fuzzy tokens, if `fuzzy_with_tokens` is
+    /// `True`.
+    ///
+    /// # Errors
+    ///
+    /// * `ValueError` - Raised for invalid or unknown string format, if the provided
+    ///    `tzinfo` is not in a valid format, or if an invalid date
+    ///    would be created.
+    ///
+    /// * `TypeError` - Raised for non-string or character stream input.
+    ///
+    /// * `OverflowError` - Raised if the parsed date exceeds the
+    ///   largest valid C integer on your system.
     pub fn parse(
         &mut self,
         timestr: &str,
@@ -1307,6 +1441,26 @@ fn ljust(s: &str, chars: usize, replace: char) -> String {
     }
 }
 
+/// Parse a string into a [`NaiveDateType`] and [`FixedOffset`] tuple.
+///
+/// # Example
+///
+/// ```rust
+/// extern crate chrono;
+/// extern crate dtparse;
+/// use chrono::{Timelike, Datelike};
+///
+/// let (time, offset) = dtparse::parse("Sat Oct 11 17:13:46 UTC 2003")
+///                         .expect(&format!("Unable to parse date"));
+/// assert_eq!(time.year(), 2003);
+/// assert_eq!(time.month(), 10);
+/// assert_eq!(time.day(), 11);
+/// assert_eq!(time.hour(), 17);
+/// assert_eq!(time.minute(), 13);
+/// assert_eq!(time.second(), 46);
+/// assert_eq!(time.timestamp_subsec_micros(), 0);
+/// assert_eq!(offset.map(|u| u.local_minus_utc()), Some(0));
+/// ```
 pub fn parse(timestr: &str) -> ParseResult<(NaiveDateTime, Option<FixedOffset>)> {
     let res = Parser::default().parse(
         timestr,
